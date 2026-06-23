@@ -47,10 +47,15 @@ You help customers find products, answer questions about pricing, availability, 
 
 CRITICAL: You MUST use search_catalog or search_available for EVERY product question.
 
-TOOLS:
+TOOLS (output exactly in this format to use a tool):
+<function=search_catalog{"query": "short keywords here"}</function>
+<function=search_available{"query": "short keywords here"}</function>
+<function=get_policy{"policy_type": "shipping_policy"}</function>
+
+Available tools:
 1. search_catalog(query) - Search ALL products (in-stock and out-of-stock). Returns 'available' field.
 2. search_available(query) - Search ONLY in-stock products. Use for recommendations.
-3. get_policy(type) - Get store policy. Use this for ANY policy question (shipping, returns, refunds, privacy, terms).
+3. get_policy(policy_type) - Get store policy. Valid types: shipping_policy, refund_policy, return_policy, privacy_policy, terms_of_service.
 
 RULES:
 - Use tools before answering. Use short keywords like "floor cleaner", "pet wipes", "bathroom cleaner".
@@ -61,59 +66,6 @@ RULES:
 - Never recommend out-of-stock items.
 - End responses with a friendly follow-up question to continue the conversation (e.g. "Which variant would suit your needs?", "Would you like to know more about any of these?", "What kind of pet do you have?").
 - Be warm, conversational, and helpful. Format as plain text, no markdown."""
-
-TOOLS_DEFINITION = [
-    {
-        "type": "function",
-        "function": {
-            "name": "search_catalog",
-            "description": "Search ALL products (in-stock and out-of-stock). Returns available=true/false. Use short keywords like 'floor cleaner'. If the customer wants to see everything or browse, search with an empty string.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Short keywords like 'floor cleaner' or '' for all products"
-                    }
-                },
-                "required": ["query"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_available",
-            "description": "Search ONLY in-stock products. Best for recommendations, alternatives, and category browsing. Use short keywords like 'pet wipes'. Use '' to show everything in stock.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Short keywords like 'floor cleaner' or '' for all in-stock products"
-                    }
-                },
-                "required": ["query"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-        "name": "get_policy",
-        "description": "Get store policy content. Types: shipping_policy, refund_policy, return_policy, privacy_policy, terms_of_service. Use this for ANY policy or terms questions — do NOT search for products when customer asks about policies.",
-        "parameters": {
-                "type": "object",
-                "properties": {
-                    "policy_type": {
-                        "type": "string"
-                    }
-                },
-                "required": ["policy_type"]
-            }
-        }
-    }
-]
 
 
 # Match Groq's text-based function calls like:
@@ -222,33 +174,23 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=messages,
-            tools=TOOLS_DEFINITION,
-            tool_choice="auto",
             temperature=0.1,
             max_tokens=1024,
         )
 
-        choice = response.choices[0]
+        raw = response.choices[0].message.content or ""
+        func_calls = parse_text_function_calls(raw)
 
-        if choice.finish_reason == "tool_calls" and choice.message.tool_calls:
-            msg = choice.message.model_dump(exclude_unset=True)
-            msg["role"] = "assistant"
-            messages.append(msg)
-
-            for tc in choice.message.tool_calls:
-                func_name = tc.function.name
-                func_args = json.loads(tc.function.arguments)
-                result = execute_tool(func_name, func_args)
-
-                if func_name in ("search_catalog", "search_available") and result:
+        if func_calls:
+            messages.append({"role": "assistant", "content": raw})
+            for fc in func_calls:
+                result = execute_tool(fc["name"], fc["arguments"])
+                if fc["name"] in ("search_catalog", "search_available") and result:
                     collect_products_from_result(result, products)
-
                 messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": json.dumps(result, ensure_ascii=False) if result else "No results found"
+                    "role": "user",
+                    "content": f"Tool result: {json.dumps(result, ensure_ascii=False) if result else 'No results found'}"
                 })
-
             final_response = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=messages,
@@ -256,30 +198,8 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
                 max_tokens=1024,
             )
             answer = final_response.choices[0].message.content or ""
-
         else:
-            raw = choice.message.content or ""
-            func_calls = parse_text_function_calls(raw) if raw else []
-
-            if func_calls:
-                messages.append({"role": "assistant", "content": raw})
-                for fc in func_calls:
-                    result = execute_tool(fc["name"], fc["arguments"])
-                    if fc["name"] in ("search_catalog", "search_available") and result:
-                        collect_products_from_result(result, products)
-                    messages.append({
-                        "role": "user",
-                        "content": f"Tool result: {json.dumps(result, ensure_ascii=False) if result else 'No results found'}"
-                    })
-                final_response = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
-                    messages=messages,
-                    temperature=0.1,
-                    max_tokens=1024,
-                )
-                answer = final_response.choices[0].message.content or ""
-            else:
-                answer = raw
+            answer = raw
 
     except Exception as e:
         logger.error("Groq chat error: %s", str(e), exc_info=True)
@@ -301,30 +221,34 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
         if failed_gen:
             func_calls = parse_text_function_calls(failed_gen)
             if func_calls:
-                for fc in func_calls:
-                    result = execute_tool(fc["name"], fc["arguments"])
-                    if fc["name"] in ("search_catalog", "search_available") and result:
-                        collect_products_from_result(result, products)
+                first_call = func_calls[0]
+                result = execute_tool(first_call["name"], first_call["arguments"])
 
-                if func_calls[0]["name"] in ("search_catalog", "search_available") and products and client:
-                    summary = short_product_list_text(products)
-                    follow = [
-                        {"role": "system", "content": "You are a friendly pet store assistant. Highlight product FEATURES like eco-friendly, gentle, sizes. Use short names. End with a follow-up question. No markdown."},
-                        {"role": "user", "content": f"Customer asked about products. I found:\n{summary}\n\nCraft a friendly response highlighting features and ask a follow-up."}
-                    ]
-                    try:
-                        follow_resp = client.chat.completions.create(
-                            model="llama-3.3-70b-versatile",
-                            messages=follow,
-                            temperature=0.5,
-                            max_tokens=500,
-                        )
-                        answer = follow_resp.choices[0].message.content or ""
-                        if answer:
-                            return {"answer": answer, "products": products}
-                    except Exception:
-                        pass
-                return {"answer": "Here are some products I found:", "products": products}
+                if first_call["name"] == "get_policy" and result:
+                    answer = result["content"]
+                    return {"answer": answer, "products": []}
+
+                if first_call["name"] in ("search_catalog", "search_available") and result:
+                    collect_products_from_result(result, products)
+
+                    if not products:
+                        answer = "I couldn't find any products matching your request. Please try a different search."
+                        return {"answer": answer, "products": []}
+
+                    in_stock = [p for p in products if p["available"]]
+                    if not in_stock:
+                        alt = search_available(extract_keywords(message))
+                        if alt:
+                            products.clear()
+                            collect_products_from_result(alt, products)
+                            in_stock = [p for p in products if p["available"]]
+
+                    if in_stock:
+                        summary = short_product_list_text(in_stock)
+                        answer = f"I found some products that might interest you:\n{summary}\n\nWould you like more details on any of these?"
+                    else:
+                        answer = "Those products are currently out of stock. Try searching for something else!"
+                    return {"answer": answer, "products": products}
 
     # Fallback: if no products and answer is empty or generic "sorry", extract keywords and auto-search
     policy_keywords = ["policy", "return", "shipping", "refund", "privacy", "terms", "warranty"]

@@ -5,3 +5,5 @@ __pycache__/
 server.log
 server_err.log
 *.db
+
+.vercel

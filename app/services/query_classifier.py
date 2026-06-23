@@ -172,6 +172,7 @@ def get_response_mode(query_type: str, emotions: Dict[str, float]) -> Dict[str, 
     elif query_type == "general":
         mode["show_images"] = False
         mode["recommend_products"] = False
+        mode["search_products"] = False
         mode["tone"] = "friendly"
 
     elif query_type == "support":
