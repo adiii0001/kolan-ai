@@ -6,6 +6,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+@router.get("/seed")
 @router.post("/seed")
 async def seed_products():
     try:
