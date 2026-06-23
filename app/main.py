@@ -52,12 +52,8 @@ def _check_and_seed():
             logger.info("Auto-seeded products on startup")
 
         if policy_count == 0:
-            from app.services.shopify_sync import upsert_policy
-            upsert_policy("shipping_policy", "Shipping Policy", """We ship across India via trusted courier partners. Free shipping on orders above Rs499. Standard delivery takes 3-7 business days. Expedited shipping available at checkout for Rs99 extra. We currently ship to all pin codes serviced by our courier partners.""")
-            upsert_policy("return_policy", "Return Policy", """You can return any product within 7 days of delivery if you are not satisfied. Products must be unused and in original packaging. To initiate a return, contact our support team with your order number. Refunds are processed within 5-7 business days after we receive the returned item.""")
-            upsert_policy("refund_policy", "Refund Policy", """Refunds are processed within 5-7 business days after we receive the returned product. The refund will be credited to your original payment method. For cash-on-delivery orders, refunds are processed via bank transfer. Contact support for any refund-related queries.""")
-            upsert_policy("privacy_policy", "Privacy Policy", """We respect your privacy. Your personal information is used only for order processing and improving your shopping experience. We do not share your data with third parties except for payment processing and delivery partners as necessary.""")
-            upsert_policy("terms_of_service", "Terms of Service", """By using our website and purchasing our products, you agree to these terms. All products are for pet use unless specified otherwise. We reserve the right to update these terms at any time. For any questions, contact our support team.""")
+            from app.services.shopify_sync import fetch_shopify_policies
+            fetch_shopify_policies()
             logger.info("Auto-seeded policies on startup")
     except Exception as e:
         logger.error("Auto-seed failed: %s", e)

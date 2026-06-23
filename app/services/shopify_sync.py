@@ -1,9 +1,41 @@
+import re
 import logging
 from typing import Dict, Any
+
+import httpx
 
 from app.core.database import get_connection
 
 logger = logging.getLogger(__name__)
+
+
+def strip_html(html: str) -> str:
+    text = re.sub(r'<[^>]+>', ' ', html)
+    text = text.replace('&nbsp;', ' ').replace('&amp;', '&')
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+def fetch_shopify_policies():
+    policy_map = {
+        "shipping_policy": "shipping-policy",
+        "return_policy": "return-policy",
+        "refund_policy": "refund-policy",
+        "privacy_policy": "privacy-policy",
+        "terms_of_service": "terms-of-service",
+    }
+
+    for policy_type, handle in policy_map.items():
+        try:
+            resp = httpx.get(f"https://kolan.co.in/policies/{handle}.json", timeout=15)
+            if resp.status_code == 200:
+                data = resp.json().get("policy", {})
+                title = data.get("title", policy_type.replace("_", " ").title())
+                body = strip_html(data.get("body", ""))
+                if body:
+                    upsert_policy(policy_type, title, body)
+                    logger.info("Fetched Shopify policy: %s", policy_type)
+        except Exception as e:
+            logger.warning("Failed to fetch policy %s: %s", handle, e)
 
 
 def upsert_product(payload: Dict[str, Any]) -> None:
