@@ -158,6 +158,8 @@ def extract_keywords(text: str) -> str:
         "do", "does", "did", "have", "has", "had", "got",
         "available", "stock", "price", "cost", "recommend", "suggest",
         "products", "product", "items", "item", "options", "option",
+        "policy", "policies", "return", "returns", "shipping", "refund",
+        "refunds", "privacy", "terms", "warranty",
     }
     cleaned = re.sub(r"[^\w\s]", " ", text.lower())
     words = [w for w in cleaned.split() if w not in stopwords and len(w) > 1]
@@ -321,8 +323,10 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
                 return {"answer": "Here are some products I found:", "products": products}
 
     # Fallback: if no products and answer is empty or generic "sorry", extract keywords and auto-search
+    policy_keywords = ["policy", "return", "shipping", "refund", "privacy", "terms", "warranty"]
+    is_policy_question = any(w in message.lower() for w in policy_keywords)
     sorry_patterns = ["couldn't find", "not found", "no products", "no results", "didn't find", "can't find", "unable to find"]
-    needs_search = not products and (not answer or any(p in answer.lower() for p in sorry_patterns))
+    needs_search = not products and not is_policy_question and (not answer or any(p in answer.lower() for p in sorry_patterns))
 
     if needs_search:
         keywords = extract_keywords(message)
@@ -387,6 +391,31 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
                 answer = "The products you're looking for are currently out of stock. Try searching for something else or check back later!"
 
     if not answer:
-        answer = "Sorry, I couldn't find any products matching your request. Please try a different search."
+        if is_policy_question:
+            policy_type = None
+            for kw in policy_keywords:
+                if kw in message.lower():
+                    if kw == "return" or kw == "returns":
+                        policy_type = "return_policy"
+                    elif kw == "shipping":
+                        policy_type = "shipping_policy"
+                    elif kw == "refund" or kw == "refunds":
+                        policy_type = "refund_policy"
+                    elif kw == "privacy":
+                        policy_type = "privacy_policy"
+                    elif kw == "terms":
+                        policy_type = "terms_of_service"
+                    elif kw == "warranty":
+                        policy_type = "warranty_policy"
+                    break
+            if policy_type:
+                from app.tools.get_policy import get_policy
+                pol = get_policy(policy_type)
+                if pol:
+                    answer = pol["content"]
+                else:
+                    answer = "I don't have that policy information right now. Please contact our support team for assistance."
+        else:
+            answer = "Sorry, I couldn't find any products matching your request. Please try a different search."
 
     return {"answer": answer, "products": products}
