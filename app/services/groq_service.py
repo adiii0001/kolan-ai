@@ -40,7 +40,7 @@ def format_context(ctx: Dict[str, Any]) -> str:
 
 client: Optional[Groq] = None
 if settings.groq_api_key:
-    client = Groq(api_key=settings.groq_api_key)
+    client = Groq(api_key=settings.groq_api_key, max_retries=0)
 
 SYSTEM_PROMPT = """You are Kolan AI, a friendly and knowledgeable shopping assistant for Kolan, a pet store.
 You help customers find products, answer questions about pricing, availability, features, shipping, refunds, returns, and policies.

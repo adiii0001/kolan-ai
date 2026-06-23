@@ -18,7 +18,7 @@ def strip_html(html: str) -> str:
 def fetch_shopify_policies():
     policy_map = {
         "shipping_policy": "shipping-policy",
-        "return_policy": "return-policy",
+        "return_policy": "refund-policy",
         "refund_policy": "refund-policy",
         "privacy_policy": "privacy-policy",
         "terms_of_service": "terms-of-service",
