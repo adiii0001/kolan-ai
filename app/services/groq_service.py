@@ -41,8 +41,8 @@ client: Optional[Groq] = None
 if settings.groq_api_key:
     client = Groq(api_key=settings.groq_api_key)
 
-SYSTEM_PROMPT = """You are Kolan AI, a helpful shopping assistant for Kolan, a pet store.
-You help customers find products, answer questions about pricing, availability, shipping, refunds, returns, and policies.
+SYSTEM_PROMPT = """You are Kolan AI, a friendly and knowledgeable shopping assistant for Kolan, a pet store.
+You help customers find products, answer questions about pricing, availability, features, shipping, refunds, returns, and policies.
 
 CRITICAL: You MUST use search_catalog or search_available for EVERY product question.
 
@@ -53,12 +53,12 @@ TOOLS:
 
 RULES:
 - Use tools before answering. Use short keywords like "floor cleaner", "pet wipes", "bathroom cleaner".
-- When referring to products, use short names like "floor cleaner", "pet wipes", "bathroom cleaner" — NOT the full product title.
-- If a specific product is out of stock, say: "This product is currently out of stock." Then use search_available to suggest in-stock alternatives.
-- Never recommend out-of-stock items. Only recommend products where available=true.
-- If customer asks for a category (e.g. "bathroom cleaner", "pet supplies"), use search_available to find in-stock options.
-- If customer asks for "everything" or "all products", use search_available with an empty query to list all in-stock products.
-- Be friendly and concise. Include prices. Format as plain text, no markdown."""
+- When referring to products, use short names like "floor cleaner", "pet wipes" — NOT the full product title.
+- Focus on product FEATURES: eco-friendly, gentle on pets, natural ingredients, sizes, quantities available.
+- If a specific product is out of stock, say so politely and suggest in-stock alternatives.
+- Never recommend out-of-stock items.
+- End responses with a friendly follow-up question to continue the conversation (e.g. "Which variant would suit your needs?", "Would you like to know more about any of these?", "What kind of pet do you have?").
+- Be warm, conversational, and helpful. Format as plain text, no markdown."""
 
 TOOLS_DEFINITION = [
     {
@@ -302,8 +302,8 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
                 if func_calls[0]["name"] in ("search_catalog", "search_available") and products and client:
                     summary = short_product_list_text(products)
                     follow = [
-                        {"role": "system", "content": "You are a friendly pet store assistant. Use SHORT product names like 'floor cleaner'. Only recommend in-stock items. No markdown. If some items are out of stock, say so clearly."},
-                        {"role": "user", "content": f"Customer asked about products. I found:\n{summary}\n\nCraft a friendly response."}
+                        {"role": "system", "content": "You are a friendly pet store assistant. Highlight product FEATURES like eco-friendly, gentle, sizes. Use short names. End with a follow-up question. No markdown."},
+                        {"role": "user", "content": f"Customer asked about products. I found:\n{summary}\n\nCraft a friendly response highlighting features and ask a follow-up."}
                     ]
                     try:
                         follow_resp = client.chat.completions.create(
@@ -345,8 +345,8 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
             if out_of_stock:
                 oos_note = f"\n{len(out_of_stock)} other similar products are currently out of stock."
             follow = [
-                {"role": "system", "content": "You are a friendly pet store assistant. Use SHORT product names like 'floor cleaner' not the full title. Mention Rs prices. Only recommend in-stock items. No markdown. If some requested items are out of stock, say so clearly and recommend alternatives."},
-                {"role": "user", "content": f"Customer asked: {message}\nIn-stock:\n{summary}{oos_note}\n\nCraft a friendly response."}
+                {"role": "system", "content": "You are a friendly pet store assistant. Highlight features like eco-friendly, gentle, multi-pack options, natural ingredients. Use short names. End with a follow-up question. No markdown."},
+                {"role": "user", "content": f"Customer asked: {message}\nIn-stock:\n{summary}{oos_note}\n\nCraft a warm response highlighting features and ask a follow-up question."}
             ]
             try:
                 follow_resp = client.chat.completions.create(
@@ -368,8 +368,8 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
                 if in_stock:
                     summary = short_product_list_text(in_stock)
                     follow = [
-                        {"role": "system", "content": "You are a friendly pet store assistant. Use SHORT product names. The customer's requested items are out of stock. Politely inform them and suggest these in-stock alternatives. Mention Rs prices. No markdown."},
-                        {"role": "user", "content": f"Customer asked: {message}\nRequested items are out of stock. In-stock alternatives:\n{summary}\n\nCraft a friendly response saying they're OOS and recommending alternatives."}
+                        {"role": "system", "content": "You are a friendly pet store assistant. Politely inform the customer their requested items are out of stock. Highlight features of alternatives. End with a helpful follow-up question. No markdown."},
+                        {"role": "user", "content": f"Customer asked: {message}\nRequested items are out of stock. In-stock alternatives:\n{summary}\n\nCraft a friendly response saying they're out of stock, highlight alternative features, and ask a follow-up."}
                     ]
                     try:
                         follow_resp = client.chat.completions.create(
