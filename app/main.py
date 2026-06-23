@@ -1,10 +1,11 @@
 import logging
+import threading
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from app.core.database import init_db
+from app.core.database import init_db, get_connection
 from app.core.security import configure_cors
 from app.routes.health import router as health_router
 from app.routes.chat import router as chat_router
@@ -28,7 +29,31 @@ app.include_router(webhook_router)
 app.include_router(seed_router)
 
 
+def _check_and_seed():
+    try:
+        conn = get_connection()
+        count = conn.execute("SELECT COUNT(*) FROM products").fetchone()[0]
+        conn.close()
+        if count == 0:
+            import httpx
+            from app.services.shopify_sync import upsert_product
+            page = 1
+            while True:
+                resp = httpx.get("https://kolan.co.in/products.json", params={"limit": 250, "page": page}, timeout=30)
+                resp.raise_for_status()
+                items = resp.json().get("products", [])
+                if not items:
+                    break
+                for p in items:
+                    upsert_product(p)
+                page += 1
+            logger.info("Auto-seeded products on startup")
+    except Exception as e:
+        logger.error("Auto-seed failed: %s", e)
+
+
 @app.on_event("startup")
 async def startup() -> None:
     init_db()
+    threading.Thread(target=_check_and_seed, daemon=True).start()
     logger.info("Database initialized")
