@@ -220,6 +220,11 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
 
     except Exception as e:
         logger.error("Groq chat error: %s", str(e), exc_info=True)
+
+        status = getattr(e, "status_code", None) or (getattr(e, "response", None) and getattr(e.response, "status_code", None))
+        if status == 429:
+            return {"answer": "I'm sorry, I'm a bit overwhelmed with requests right now. Please try again in a few minutes.", "products": []}
+
         failed_gen = ""
         try:
             resp = getattr(e, "response", None)
