@@ -26,7 +26,7 @@ def fetch_all_products():
     return products
 
 
-def seed():
+def seed() -> int:
     from app.services.shopify_sync import upsert_product
 
     init_db()
@@ -34,6 +34,7 @@ def seed():
     for p in products:
         upsert_product(p)
     print(f"Seeded {len(products)} products.")
+    return len(products)
 
 
 if __name__ == "__main__":
