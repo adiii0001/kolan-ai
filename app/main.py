@@ -51,10 +51,9 @@ def _check_and_seed():
                 page += 1
             logger.info("Auto-seeded products on startup")
 
-        if policy_count == 0:
-            from app.services.shopify_sync import fetch_shopify_policies
-            fetch_shopify_policies()
-            logger.info("Auto-seeded policies on startup")
+        from app.services.shopify_sync import fetch_shopify_policies
+        fetch_shopify_policies()
+        logger.info("Auto-seeded policies on startup")
     except Exception as e:
         logger.error("Auto-seed failed: %s", e)
 
