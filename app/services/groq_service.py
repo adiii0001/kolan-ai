@@ -49,10 +49,11 @@ CRITICAL: You MUST use search_catalog or search_available for EVERY product ques
 TOOLS:
 1. search_catalog(query) - Search ALL products (in-stock and out-of-stock). Returns 'available' field.
 2. search_available(query) - Search ONLY in-stock products. Use for recommendations.
-3. get_policy(type) - Get store policy.
+3. get_policy(type) - Get store policy. Use this for ANY policy question (shipping, returns, refunds, privacy, terms).
 
 RULES:
 - Use tools before answering. Use short keywords like "floor cleaner", "pet wipes", "bathroom cleaner".
+- When customer asks about POLICIES (shipping, returns, refunds, privacy, terms), ALWAYS call get_policy — do NOT search products.
 - When referring to products, use short names like "floor cleaner", "pet wipes" — NOT the full product title.
 - Focus on product FEATURES: eco-friendly, gentle on pets, natural ingredients, sizes, quantities available.
 - If a specific product is out of stock, say so politely and suggest in-stock alternatives.
@@ -98,9 +99,9 @@ TOOLS_DEFINITION = [
     {
         "type": "function",
         "function": {
-            "name": "get_policy",
-            "description": "Get store policy. Types: shipping_policy, refund_policy, return_policy, privacy_policy, terms_of_service",
-            "parameters": {
+        "name": "get_policy",
+        "description": "Get store policy content. Types: shipping_policy, refund_policy, return_policy, privacy_policy, terms_of_service. Use this for ANY policy or terms questions — do NOT search for products when customer asks about policies.",
+        "parameters": {
                 "type": "object",
                 "properties": {
                     "policy_type": {
