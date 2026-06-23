@@ -124,3 +124,99 @@ def upsert_policy(policy_type: str, title: str, content: str) -> None:
     conn.commit()
     conn.close()
     logger.info("Policy upserted: %s", policy_type)
+
+
+def sync_collections():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS collections (
+            handle TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            description TEXT,
+            product_count INTEGER DEFAULT 0,
+            updated_at TEXT
+        )
+    """)
+    conn.commit()
+
+    try:
+        resp = httpx.get("https://kolan.co.in/collections.json", timeout=15)
+        if resp.status_code == 200:
+            collections = resp.json().get("collections", [])
+            for col in collections:
+                handle = col.get("handle", "")
+                title = col.get("title", "")
+                body = strip_html(col.get("body_html", ""))
+                if not handle or handle == "all":
+                    continue
+
+                try:
+                    prod_resp = httpx.get(
+                        f"https://kolan.co.in/collections/{handle}/products.json",
+                        params={"limit": 250},
+                        timeout=15,
+                    )
+                    product_count = 0
+                    if prod_resp.status_code == 200:
+                        product_count = len(prod_resp.json().get("products", []))
+                except Exception:
+                    product_count = 0
+
+                cursor.execute("""
+                    INSERT INTO collections (handle, title, description, product_count, updated_at)
+                    VALUES (?, ?, ?, ?, datetime('now'))
+                    ON CONFLICT(handle) DO UPDATE SET
+                        title = excluded.title,
+                        description = excluded.description,
+                        product_count = excluded.product_count,
+                        updated_at = datetime('now')
+                """, (handle, title, body[:500] if body else "", product_count))
+                logger.info("Collection synced: %s (%d products)", title, product_count)
+
+            conn.commit()
+    except Exception as e:
+        logger.warning("Failed to sync collections: %s", e)
+    finally:
+        conn.close()
+
+
+def get_all_collections():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT handle, title, description, product_count FROM collections ORDER BY title")
+    rows = cursor.fetchall()
+    conn.close()
+    return [
+        {"handle": r["handle"], "title": r["title"], "description": r["description"] or "", "product_count": r["product_count"]}
+        for r in rows
+    ]
+
+
+def get_collection_products(handle: str, limit: int = 20):
+    try:
+        resp = httpx.get(
+            f"https://kolan.co.in/collections/{handle}/products.json",
+            params={"limit": limit},
+            timeout=15,
+        )
+        if resp.status_code == 200:
+            products = resp.json().get("products", [])
+            results = []
+            for p in products:
+                variants = p.get("variants", [])
+                price = float(variants[0].get("price", 0)) if variants else 0
+                available = any(v.get("available", False) for v in variants) if variants else False
+                images = p.get("images", [])
+                image_url = images[0].get("src", "") if images else ""
+                results.append({
+                    "title": p.get("title", ""),
+                    "price": price,
+                    "handle": p.get("handle", ""),
+                    "image_url": image_url,
+                    "available": available,
+                })
+            return results
+    except Exception:
+        pass
+    return []

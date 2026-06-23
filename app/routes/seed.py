@@ -3,7 +3,7 @@ import logging
 import httpx
 from fastapi import APIRouter, HTTPException
 from app.core.database import init_db, get_connection
-from app.services.shopify_sync import upsert_product, fetch_shopify_policies
+from app.services.shopify_sync import upsert_product, fetch_shopify_policies, sync_collections
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -35,7 +35,8 @@ async def seed_products():
         for p in products:
             upsert_product(p)
         fetch_shopify_policies()
-        return {"status": "ok", "products_seeded": len(products), "policies_seeded": 5}
+        sync_collections()
+        return {"status": "ok", "products_seeded": len(products), "policies_seeded": 5, "collections_synced": True}
     except Exception as e:
         logger.error("Seed failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))

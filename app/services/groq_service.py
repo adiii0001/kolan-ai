@@ -8,6 +8,7 @@ from groq import Groq
 from app.core.config import settings
 from app.tools.search_catalog import search_catalog, search_available
 from app.tools.get_policy import get_policy
+from app.services.shopify_sync import get_all_collections, get_collection_products
 from app.services.query_classifier import build_emotion_context, format_classification_for_prompt
 
 logger = logging.getLogger(__name__)
@@ -45,26 +46,38 @@ if settings.groq_api_key:
 SYSTEM_PROMPT = """You are Kolan AI, a friendly and knowledgeable shopping assistant for Kolan, a pet store.
 You help customers find products, answer questions about pricing, availability, features, shipping, refunds, returns, and policies.
 
-CRITICAL: You MUST use search_catalog or search_available for EVERY product question.
+CRITICAL: You MUST use tools for EVERY product or collection question.
 
 TOOLS (output exactly in this format to use a tool):
 <function=search_catalog{"query": "short keywords here"}</function>
 <function=search_available{"query": "short keywords here"}</function>
 <function=get_policy{"policy_type": "shipping_policy"}</function>
+<function=list_collections{}</function>
+<function=get_collection{"handle": "collection-handle"}</function>
 
 Available tools:
-1. search_catalog(query) - Search ALL products (in-stock and out-of-stock). Returns 'available' field.
+1. search_catalog(query) - Search ALL products (in-stock and out-of-stock).
 2. search_available(query) - Search ONLY in-stock products. Use for recommendations.
 3. get_policy(policy_type) - Get store policy. Valid types: shipping_policy, refund_policy, return_policy, privacy_policy, terms_of_service.
+4. list_collections{} - List all product collections (pet-care, household-cleaners, commercial-cleaning, combo-packs, pet-wipes).
+5. get_collection(handle, limit) - Get products from a specific collection. Use the collection handle.
+
+COLLECTIONS AVAILABLE:
+- pet-care: Pet care products
+- household-cleaners: Household cleaning products
+- commercial-cleaning: Commercial cleaning products
+- combo-packs: Combo deals and bundles
+- pet-wipes: Pet grooming wipes
 
 RULES:
 - Use tools before answering. Use short keywords like "floor cleaner", "pet wipes", "bathroom cleaner".
 - When customer asks about POLICIES (shipping, returns, refunds, privacy, terms), ALWAYS call get_policy — do NOT search products.
+- When customer asks about a COLLECTION (e.g. "show me pet care", "what's in combo packs", "commercial cleaning products"), call get_collection with the handle.
 - When referring to products, use short names like "floor cleaner", "pet wipes" — NOT the full product title.
 - Focus on product FEATURES: eco-friendly, gentle on pets, natural ingredients, sizes, quantities available.
 - If a specific product is out of stock, say so politely and suggest in-stock alternatives.
 - Never recommend out-of-stock items.
-- End responses with a friendly follow-up question to continue the conversation (e.g. "Which variant would suit your needs?", "Would you like to know more about any of these?", "What kind of pet do you have?").
+- End responses with a friendly follow-up question to continue the conversation.
 - Be warm, conversational, and helpful. Format as plain text, no markdown."""
 
 
@@ -81,6 +94,10 @@ def execute_tool(name: str, args: Dict[str, Any]) -> Any:
         return search_available(args.get("query", ""))
     elif name == "get_policy":
         return get_policy(args.get("policy_type", ""))
+    elif name == "list_collections":
+        return get_all_collections()
+    elif name == "get_collection":
+        return get_collection_products(args.get("handle", ""), args.get("limit", 20))
     return None
 
 
