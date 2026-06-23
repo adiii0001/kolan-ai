@@ -9,7 +9,7 @@ from app.core.security import configure_cors
 from app.routes.health import router as health_router
 from app.routes.chat import router as chat_router
 from app.routes.webhook import router as webhook_router
-from app.services.auto_sync import start_auto_sync
+
 
 logger = logging.getLogger(__name__)
 
@@ -29,5 +29,4 @@ app.include_router(webhook_router)
 @app.on_event("startup")
 async def startup() -> None:
     init_db()
-    start_auto_sync()
-    logger.info("Auto product sync started (every 5 minutes)")
+    logger.info("Database initialized")
