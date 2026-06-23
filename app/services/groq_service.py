@@ -8,6 +8,7 @@ from groq import Groq
 from app.core.config import settings
 from app.tools.search_catalog import search_catalog, search_available
 from app.tools.get_policy import get_policy
+from app.services.query_classifier import build_emotion_context, format_classification_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -206,6 +207,9 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
         if ctx_block:
             system = SYSTEM_PROMPT + "\n\n" + ctx_block
 
+    class_info = build_emotion_context(message)
+    system += format_classification_for_prompt(class_info)
+
     messages = [{"role": "system", "content": system}]
     for h in history:
         messages.append(h)
@@ -326,7 +330,8 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
     policy_keywords = ["policy", "return", "shipping", "refund", "privacy", "terms", "warranty"]
     is_policy_question = any(w in message.lower() for w in policy_keywords)
     sorry_patterns = ["couldn't find", "not found", "no products", "no results", "didn't find", "can't find", "unable to find"]
-    needs_search = not products and not is_policy_question and (not answer or any(p in answer.lower() for p in sorry_patterns))
+    skip_search = not class_info["mode"]["search_products"]
+    needs_search = not products and not is_policy_question and not skip_search and (not answer or any(p in answer.lower() for p in sorry_patterns))
 
     if needs_search:
         keywords = extract_keywords(message)
@@ -417,5 +422,9 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
                     answer = "I don't have that policy information right now. Please contact our support team for assistance."
         else:
             answer = "Sorry, I couldn't find any products matching your request. Please try a different search."
+
+    mode = class_info["mode"]
+    if not mode["show_images"] or not mode["recommend_products"]:
+        products.clear()
 
     return {"answer": answer, "products": products}

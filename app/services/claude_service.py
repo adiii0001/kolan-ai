@@ -7,6 +7,7 @@ from anthropic import Anthropic
 from app.core.config import settings
 from app.tools.search_catalog import search_catalog, search_available, get_all_products
 from app.tools.get_policy import get_policy
+from app.services.query_classifier import build_emotion_context, format_classification_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +140,9 @@ async def claude_chat(message: str, history: List[Dict[str, str]], context: Opti
         if ctx_block:
             system = SYSTEM_PROMPT + "\n\n" + ctx_block
 
+    class_info = build_emotion_context(message)
+    system += format_classification_for_prompt(class_info)
+
     messages = []
     for h in history:
         if h["role"] in ("user", "assistant"):
@@ -204,6 +208,10 @@ async def claude_chat(message: str, history: List[Dict[str, str]], context: Opti
             for block in response.content:
                 if block.type == "text":
                     answer += block.text
+
+        mode = class_info["mode"]
+        if not mode["show_images"] or not mode["recommend_products"]:
+            products.clear()
 
         return {"answer": answer or "I'm not sure how to help with that.", "products": products}
 
