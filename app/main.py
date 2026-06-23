@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from app.core.database import init_db, get_connection
 from app.core.security import configure_cors
 from app.routes.health import router as health_router
-from app.routes.chat import router as chat_router
+from app.routes.chat import router as chat_router, ChatRequest, chat_endpoint
 from app.routes.webhook import router as webhook_router
 from app.routes.seed import router as seed_router
 
@@ -61,6 +61,11 @@ def _check_and_seed():
             logger.info("Auto-seeded policies on startup")
     except Exception as e:
         logger.error("Auto-seed failed: %s", e)
+
+
+@app.post("/")
+async def root_chat(req: ChatRequest):
+    return await chat_endpoint(req)
 
 
 @app.on_event("startup")
