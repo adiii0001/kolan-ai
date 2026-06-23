@@ -183,21 +183,38 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
 
         if func_calls:
             messages.append({"role": "assistant", "content": raw})
+            tool_results = []
             for fc in func_calls:
                 result = execute_tool(fc["name"], fc["arguments"])
+                tool_results.append({"name": fc["name"], "result": result})
                 if fc["name"] in ("search_catalog", "search_available") and result:
                     collect_products_from_result(result, products)
                 messages.append({
                     "role": "user",
-                    "content": f"Tool result: {json.dumps(result, ensure_ascii=False) if result else 'No results found'}"
+                    "content": json.dumps(result, ensure_ascii=False) if result else "No results found"
                 })
-            final_response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=messages,
-                temperature=0.1,
-                max_tokens=1024,
-            )
-            answer = final_response.choices[0].message.content or ""
+            try:
+                final_response = client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=messages,
+                    temperature=0.1,
+                    max_tokens=1024,
+                )
+                answer = final_response.choices[0].message.content or ""
+            except Exception:
+                logger.warning("Groq follow-up call failed, using tool result directly")
+                first_result = tool_results[0] if tool_results else None
+                if first_result and first_result["name"] == "get_policy":
+                    answer = first_result["result"]["content"]
+                elif products:
+                    in_stock = [p for p in products if p["available"]]
+                    if in_stock:
+                        summary = short_product_list_text(in_stock)
+                        answer = f"I found these products:\n{summary}"
+                    else:
+                        answer = "Those products are currently out of stock."
+                else:
+                    answer = "I'm sorry, I couldn't find the information you're looking for."
         else:
             answer = raw
 
