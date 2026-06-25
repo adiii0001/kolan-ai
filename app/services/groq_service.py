@@ -77,6 +77,7 @@ RULES:
 - Focus on product FEATURES: eco-friendly, gentle on pets, natural ingredients, sizes, quantities available.
 - If a specific product is out of stock, say so politely and suggest in-stock alternatives.
 - Never recommend out-of-stock items.
+- CRITICAL: When showing products, keep your text VERY SHORT (1-2 sentences max). The product cards with images, prices, and links will be shown automatically. Do NOT list products in your text — just say something like "Here are some great options!" or "We have combo packs available!" and let the cards display.
 - End responses with a friendly follow-up question to continue the conversation.
 - Be warm, conversational, and helpful. Format as plain text, no markdown."""
 
@@ -204,7 +205,7 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
             for fc in func_calls:
                 result = execute_tool(fc["name"], fc["arguments"])
                 tool_results.append({"name": fc["name"], "result": result})
-                if fc["name"] in ("search_catalog", "search_available") and result:
+                if fc["name"] in ("search_catalog", "search_available", "get_collection") and result:
                     collect_products_from_result(result, products)
                 messages.append({
                     "role": "user",
@@ -267,7 +268,7 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
                     answer = result["content"]
                     return {"answer": answer, "products": []}
 
-                if first_call["name"] in ("search_catalog", "search_available") and result:
+                if first_call["name"] in ("search_catalog", "search_available", "get_collection") and result:
                     collect_products_from_result(result, products)
 
                     if not products:
@@ -318,8 +319,8 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
             if out_of_stock:
                 oos_note = f"\n{len(out_of_stock)} other similar products are currently out of stock."
             follow = [
-                {"role": "system", "content": "You are a friendly pet store assistant. Highlight features like eco-friendly, gentle, multi-pack options, natural ingredients. Use short names. End with a follow-up question. No markdown."},
-                {"role": "user", "content": f"Customer asked: {message}\nIn-stock:\n{summary}{oos_note}\n\nCraft a warm response highlighting features and ask a follow-up question."}
+                {"role": "system", "content": "You are a friendly pet store assistant. Keep your response to 1-2 sentences MAX. Product cards with images and prices will be shown automatically below your text — do NOT list products or prices in your reply. Just mention key features (eco-friendly, multi-pack, natural). End with a follow-up question. No markdown."},
+                {"role": "user", "content": f"Customer asked: {message}\nIn-stock:\n{summary}{oos_note}\n\nCraft a very short response (1-2 sentences). Do NOT list products."}
             ]
             try:
                 follow_resp = client.chat.completions.create(
@@ -341,8 +342,8 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
                 if in_stock:
                     summary = short_product_list_text(in_stock)
                     follow = [
-                        {"role": "system", "content": "You are a friendly pet store assistant. Politely inform the customer their requested items are out of stock. Highlight features of alternatives. End with a helpful follow-up question. No markdown."},
-                        {"role": "user", "content": f"Customer asked: {message}\nRequested items are out of stock. In-stock alternatives:\n{summary}\n\nCraft a friendly response saying they're out of stock, highlight alternative features, and ask a follow-up."}
+                        {"role": "system", "content": "You are a friendly pet store assistant. Keep your response to 1-2 sentences MAX. Product cards with images and prices will be shown automatically below your text — do NOT list products or prices. Just say items are out of stock and cards show alternatives. No markdown."},
+                        {"role": "user", "content": f"Customer asked: {message}\nRequested items are out of stock. In-stock alternatives:\n{summary}\n\nCraft a very short response (1-2 sentences). Do NOT list products."}
                     ]
                     try:
                         follow_resp = client.chat.completions.create(
