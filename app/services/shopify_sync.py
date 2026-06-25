@@ -63,8 +63,8 @@ def upsert_product(payload: Dict[str, Any]) -> None:
         compare_price = v.get("compare_at_price")
         if compare_price is not None:
             compare_at_price = float(compare_price)
-        inventory_quantity = v.get("inventory_quantity", 0) or 0
-        available = 1 if v.get("available", True) else 0
+        inventory_quantity = sum((variant.get("inventory_quantity") or 0) for variant in variants)
+        available = 1 if any(variant.get("available", False) for variant in variants) else 0
 
     image_url = ""
     images = payload.get("images", [])
