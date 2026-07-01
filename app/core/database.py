@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from pathlib import Path
 
@@ -5,12 +6,16 @@ from app.core.config import settings
 
 
 def get_db_path() -> Path:
-    return Path(settings.database_url).resolve()
+    if os.environ.get("VERCEL") == "1":
+        return Path("/tmp/kolan.db")
+    raw = settings.database_url.strip()
+    return Path(raw).resolve()
 
 
 def get_connection() -> sqlite3.Connection:
     path = get_db_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.parent and not path.parent.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")

@@ -1,5 +1,11 @@
+import os
+
 from pydantic_settings import BaseSettings
 from typing import List
+
+
+def _should_load_dotenv() -> bool:
+    return os.environ.get("VERCEL") != "1"
 
 
 class Settings(BaseSettings):
@@ -14,7 +20,7 @@ class Settings(BaseSettings):
     ]
 
     class Config:
-        env_file = ".env"
+        env_file = ".env" if _should_load_dotenv() else None
         env_file_encoding = "utf-8"
 
 
