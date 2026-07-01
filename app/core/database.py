@@ -6,7 +6,7 @@ from app.core.config import settings
 
 
 def get_db_path() -> Path:
-    raw = settings.database_url
+    raw = settings.database_url.strip()
     return Path(raw).resolve()
 
 

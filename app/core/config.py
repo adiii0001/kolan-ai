@@ -4,10 +4,6 @@ from pydantic_settings import BaseSettings
 from typing import List
 
 
-def _should_load_dotenv() -> bool:
-    return os.environ.get("VERCEL") != "1"
-
-
 class Settings(BaseSettings):
     groq_api_key: str = ""
     claude_api_key: str = ""
@@ -21,16 +17,14 @@ class Settings(BaseSettings):
     ]
 
     class Config:
-        env_file = ".env" if _should_load_dotenv() else None
+        env_file = ".env"
         env_file_encoding = "utf-8"
-
-    def model_post_init(self, __context):
-        # Strip leading/trailing whitespace from all string values (fixes Vercel
-        # env var corruption where stray newlines get prepended to values)
-        for field_name in self.model_fields:
-            value = getattr(self, field_name)
-            if isinstance(value, str):
-                object.__setattr__(self, field_name, value.strip())
 
 
 settings = Settings()
+
+# Strip whitespace from all string settings (protects against env var corruption)
+for _field in settings.model_fields:
+    _val = getattr(settings, _field, None)
+    if isinstance(_val, str):
+        setattr(settings, _field, _val.strip())
