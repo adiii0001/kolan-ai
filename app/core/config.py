@@ -4,6 +4,20 @@ from pydantic_settings import BaseSettings
 from typing import List
 
 
+_ENV_VARS_TO_STRIP = [
+    "GROQ_API_KEY",
+    "CLAUDE_API_KEY",
+    "OPENAI_API_KEY",
+    "SHOPIFY_WEBHOOK_SECRET",
+    "DATABASE_URL",
+]
+
+for _key in _ENV_VARS_TO_STRIP:
+    _raw = os.environ.get(_key)
+    if _raw:
+        os.environ[_key] = _raw.strip()
+
+
 class Settings(BaseSettings):
     groq_api_key: str = ""
     claude_api_key: str = ""
@@ -22,9 +36,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-
-# Strip whitespace from all string settings (protects against env var corruption)
-for _field in settings.model_fields:
-    _val = getattr(settings, _field, None)
-    if isinstance(_val, str):
-        setattr(settings, _field, _val.strip())
