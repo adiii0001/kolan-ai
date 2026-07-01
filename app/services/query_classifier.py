@@ -77,6 +77,11 @@ def classify_query(message: str) -> str:
         if re.search(pattern, msg_lower):
             return "support"
 
+    deal_keywords = ["deal", "deals", "offer", "offers", "discount", "discounts", "sale", "savings", "bargain", "on sale"]
+    for kw in deal_keywords:
+        if kw in msg_lower:
+            return "product_search"
+
     product_search_intent = [
         r"\b(show|find|looking for|want|have|get|buy|purchase|see)\b",
         r"\b(available|in stock|price|cost|how much)\b",

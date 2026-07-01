@@ -6,7 +6,7 @@ from typing import List, Dict, Any, Optional
 from groq import Groq
 
 from app.core.config import settings
-from app.tools.search_catalog import search_catalog, search_available
+from app.tools.search_catalog import search_catalog, search_available, search_deals, search_new_products, search_deals_in_collection, search_best_sellers
 from app.tools.get_policy import get_policy
 from app.services.shopify_sync import get_all_collections, get_collection_products
 from app.services.query_classifier import build_emotion_context, format_classification_for_prompt
@@ -79,13 +79,21 @@ TOOLS (output exactly in this format to use a tool):
 <function=get_policy{"policy_type": "shipping_policy"}</function>
 <function=list_collections{}</function>
 <function=get_collection{"handle": "collection-handle"}</function>
+<function=search_deals{}</function>
+<function=search_new_products{}</function>
+<function=search_best_sellers{}</function>
+<function=search_deals_in_collection{"handle": "collection-handle"}</function>
 
 Available tools:
 1. search_catalog(query) - Search ALL products (in-stock and out-of-stock).
 2. search_available(query) - Search ONLY in-stock products. Use for recommendations.
-3. get_policy(policy_type) - Get store policy. Valid types: shipping_policy, refund_policy, return_policy, privacy_policy, terms_of_service.
-4. list_collections{} - List all product collections (pet-care, household-cleaners, commercial-cleaning, combo-packs, pet-wipes).
-5. get_collection(handle, limit) - Get products from a specific collection. Use the collection handle.
+3. search_deals{} - Find products currently on sale or with discounts. Use when customer asks about deals, offers, discounts, or sales.
+4. search_new_products{} - Show our curated New Collection: the latest and newest products. Use when customer asks about new arrivals, new products, or what's new.
+5. search_best_sellers{} - Show our curated Best Sellers collection: the most popular and top-selling products. Use when customer asks about best sellers, top products, best-selling, or popular items.
+6. search_deals_in_collection(handle) - Find discounted/on-sale products within a specific collection. Use when customer asks about deals in a collection.
+7. get_policy(policy_type) - Get store policy. Valid types: shipping_policy, refund_policy, return_policy, privacy_policy, terms_of_service.
+8. list_collections{} - List all product collections.
+9. get_collection(handle, limit) - Get products from a specific collection. Use the collection handle.
 
 COLLECTIONS AVAILABLE:
 - pet-care: Pet care products
@@ -125,6 +133,14 @@ def execute_tool(name: str, args: Dict[str, Any]) -> Any:
         return get_all_collections()
     elif name == "get_collection":
         return get_collection_products(args.get("handle", ""), args.get("limit", 20))
+    elif name == "search_deals":
+        return search_deals()
+    elif name == "search_new_products":
+        return search_new_products()
+    elif name == "search_best_sellers":
+        return search_best_sellers()
+    elif name == "search_deals_in_collection":
+        return search_deals_in_collection(args.get("handle", ""))
     return None
 
 
@@ -157,10 +173,22 @@ def extract_keywords(text: str) -> str:
         "products", "product", "items", "item", "options", "option",
         "policy", "policies", "return", "returns", "shipping", "refund",
         "refunds", "privacy", "terms", "warranty",
+        "under", "below", "above", "over", "less", "more", "than", "upto", "up", "max", "min", "budget",
+        "rupees", "rupee", "rs", "inr", "price", "cost",
     }
     cleaned = re.sub(r"[^\w\s]", " ", text.lower())
-    words = [w for w in cleaned.split() if w not in stopwords and len(w) > 1]
+    words = [w for w in cleaned.split() if w not in stopwords and len(w) > 1 and not w.isdigit()]
     return " ".join(words[:5]) if words else text
+
+
+def parse_price_limit(message: str) -> float:
+    m = re.search(r'(?:under|below|less than|within|max|upto|up to|budget|cheaper than)\s*(?:rs|rs\.|inr|₹)?\s*(\d{2,7})', message.lower())
+    if m:
+        return float(m.group(1))
+    m = re.search(r'(\d{2,7})\s*(?:rupees?|rs|inr)', message.lower())
+    if m:
+        return float(m.group(1))
+    return 0.0
 
 
 def collect_products_from_result(result, products):
@@ -173,6 +201,9 @@ def collect_products_from_result(result, products):
             "image_url": p["image_url"],
             "handle": p["handle"],
             "available": p["available"],
+            "first_variant_id": p.get("first_variant_id", ""),
+            "short_description": p.get("short_description", ""),
+            "compare_at_price": p.get("compare_at_price", 0),
         })
 
 
@@ -231,7 +262,7 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
             for fc in func_calls:
                 result = execute_tool(fc["name"], fc["arguments"])
                 tool_results.append({"name": fc["name"], "result": result})
-                if fc["name"] in ("search_catalog", "search_available", "get_collection") and result:
+                if fc["name"] in ("search_catalog", "search_available", "get_collection", "search_deals", "search_new_products", "search_best_sellers", "search_deals_in_collection") and result:
                     collect_products_from_result(result, products)
                 messages.append({
                     "role": "user",
@@ -267,7 +298,16 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
 
         status = getattr(e, "status_code", None) or (getattr(e, "response", None) and getattr(e.response, "status_code", None))
         if status == 429:
-            return {"answer": "I'm sorry, I'm a bit overwhelmed with requests right now. Please try again in a few minutes.", "products": []}
+            keywords = extract_keywords(message)
+            if keywords:
+                result = search_available(keywords)
+                if result:
+                    price_limit = parse_price_limit(message)
+                    if price_limit > 0:
+                        result = [p for p in result if p["price"] <= price_limit]
+                    products = [{"title": p["title"], "price": p["price"], "image_url": p["image_url"], "handle": p["handle"], "available": p["available"], "first_variant_id": p.get("first_variant_id", ""), "short_description": p.get("short_description", ""), "compare_at_price": p.get("compare_at_price", 0)} for p in result]
+                    return {"answer": "I'm currently on high demand, but here's what I found from our catalog:", "products": products}
+            return {"answer": "I'm sorry, I'm a bit overwhelmed right now. Please try again in a few minutes or browse our products directly.", "products": []}
 
         failed_gen = ""
         try:
@@ -294,7 +334,7 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
                     answer = result["content"]
                     return {"answer": answer, "products": []}
 
-                if first_call["name"] in ("search_catalog", "search_available", "get_collection") and result:
+                if first_call["name"] in ("search_catalog", "search_available", "get_collection", "search_deals", "search_new_products", "search_best_sellers", "search_deals_in_collection") and result:
                     collect_products_from_result(result, products)
 
                     if not products:
@@ -317,11 +357,46 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
                     return {"answer": answer, "products": products}
 
     # Fallback: if no products and answer is empty or generic "sorry", extract keywords and auto-search
-    policy_keywords = ["policy", "return", "shipping", "refund", "privacy", "terms", "warranty"]
-    is_policy_question = any(w in message.lower() for w in policy_keywords)
+    price_limit = parse_price_limit(message)
+    policy_keywords = ["shipping", "return", "refund", "privacy", "terms", "warranty"]
+    is_policy_question = any(w in message.lower() for w in policy_keywords) or "policy" in message.lower()
+    deal_keywords = ["deal", "deals", "offer", "offers", "discount", "discounts", "sale", "savings", "bargain"]
+    is_deals_question = any(w in message.lower() for w in deal_keywords)
+    msg_lower = message.lower()
+    is_new_question = (
+        any(w in msg_lower for w in ["what's new", "what is new", "what new", "new product", "newest product", "latest product", "new arrival", "new arrivals", "just arrived", "recently added", "newest", "latest products"])
+        or ("new" in msg_lower.split() and any(w in msg_lower for w in ["products", "product", "arrivals", "arrival", "have", "available", "show", "find", "looking", "anything"]))
+        or ("latest" in msg_lower.split() and any(w in msg_lower for w in ["products", "product", "arrivals", "arrival"]))
+    )
+    bestseller_keywords = ["best seller", "best sellers", "best-selling", "bestseller", "bestsellers", "top selling", "top seller", "top sellers", "most popular", "popular products", "popular items", "top products", "top rated"]
+    is_bestseller_question = any(w in msg_lower for w in bestseller_keywords)
     sorry_patterns = ["couldn't find", "not found", "no products", "no results", "didn't find", "can't find", "unable to find"]
     skip_search = not class_info["mode"]["search_products"]
-    needs_search = not products and not is_policy_question and not skip_search and (not answer or any(p in answer.lower() for p in sorry_patterns))
+    needs_search = not products and not is_policy_question and not is_deals_question and not is_new_question and not is_bestseller_question and not skip_search and (not answer or any(p in answer.lower() for p in sorry_patterns))
+
+    collection_handle = None
+    if context:
+        col = context.get("collection", {})
+        if col and col.get("handle"):
+            collection_handle = col.get("handle")
+
+    if is_deals_question and not products:
+        if collection_handle:
+            result = search_deals_in_collection(collection_handle)
+        else:
+            result = search_deals()
+        if result:
+            collect_products_from_result(result, products)
+
+    if is_new_question and not products:
+        result = search_new_products()
+        if result:
+            collect_products_from_result(result, products)
+
+    if is_bestseller_question and not products:
+        result = search_best_sellers()
+        if result:
+            collect_products_from_result(result, products)
 
     if needs_search:
         keywords = extract_keywords(message)
@@ -336,6 +411,8 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
                 collect_products_from_result(result, products)
 
     if products:
+        if price_limit > 0:
+            products = [p for p in products if p["price"] <= price_limit]
         in_stock = [p for p in products if p["available"]]
         out_of_stock = [p for p in products if not p["available"]]
 
@@ -343,10 +420,10 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
             summary = short_product_list_text(in_stock)
             oos_note = ""
             if out_of_stock:
-                oos_note = f"\n{len(out_of_stock)} other similar products are currently out of stock."
+                oos_note = f"\n{len(out_of_stock)} out of stock."
             follow = [
-                {"role": "system", "content": "You are a friendly pet store assistant. Keep your response to 1-2 sentences MAX. Product cards with images and prices will be shown automatically below your text — do NOT list products or prices in your reply. Just mention key features (eco-friendly, multi-pack, natural). End with a follow-up question. No markdown."},
-                {"role": "user", "content": f"Customer asked: {message}\nIn-stock:\n{summary}{oos_note}\n\nCraft a very short response (1-2 sentences). Do NOT list products."}
+                {"role": "system", "content": "You are a friendly pet store assistant. Keep your response to 1 sentence MAX. Product cards with images and prices will be shown automatically below your text — do NOT list products or prices. End with a follow-up question. No markdown."},
+                {"role": "user", "content": f"Customer asked: {message}\nIn-stock:\n{summary}{oos_note}\n\nCraft a 1-sentence response. Do NOT list product names."}
             ]
             try:
                 follow_resp = client.chat.completions.create(
@@ -357,8 +434,16 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
                 )
                 answer = follow_resp.choices[0].message.content or ""
             except Exception:
-                short_names = [p["title"].replace("Kolan ", "").replace("Organic ", "").strip() for p in in_stock]
-                answer = f"I found {len(in_stock)} in-stock products:\n" + "\n".join(f"- {n} - Rs{p['price']}" for n, p in zip(short_names, in_stock))
+                if is_deals_question:
+                    discounted = [p for p in in_stock if p.get("compare_at_price", 0) > p["price"]]
+                    answer = f"I found {len(discounted)} products currently on sale with great discounts. Take a look at the options below and let me know if you'd like more details on any of them!" if discounted else f"I found {len(in_stock)} products that might interest you. Browse through them below and feel free to ask for more details!"
+                elif is_new_question:
+                    answer = f"Here are our newest products! We've got {len(in_stock)} new arrivals for you to check out. Would you like to know more about any of them?"
+                elif is_bestseller_question:
+                    answer = f"Here are our best-selling products! We've got {len(in_stock)} popular items that customers love. Would you like more details on any of them?"
+                else:
+                    category = extract_keywords(message)
+                    answer = f"Great, I found {len(in_stock)} products matching your interest in {category}. Here are some eco-friendly options for you to explore. Would you like me to help you narrow it down further?" if category else f"I found {len(in_stock)} products that might interest you. Browse through them below and let me know if you'd like more details!"
 
         elif out_of_stock:
             alt_result = search_available(extract_keywords(message))
@@ -368,8 +453,8 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
                 if in_stock:
                     summary = short_product_list_text(in_stock)
                     follow = [
-                        {"role": "system", "content": "You are a friendly pet store assistant. Keep your response to 1-2 sentences MAX. Product cards with images and prices will be shown automatically below your text — do NOT list products or prices. Just say items are out of stock and cards show alternatives. No markdown."},
-                        {"role": "user", "content": f"Customer asked: {message}\nRequested items are out of stock. In-stock alternatives:\n{summary}\n\nCraft a very short response (1-2 sentences). Do NOT list products."}
+                        {"role": "system", "content": "You are a friendly pet store assistant. Keep your response to 1 sentence. Product cards shown below. No markdown."},
+                        {"role": "user", "content": f"Customer asked: {message}\nRequested items are out of stock. In-stock alternatives:\n{summary}\n\n1 sentence. Do NOT list products."}
                     ]
                     try:
                         follow_resp = client.chat.completions.create(
@@ -380,41 +465,92 @@ async def groq_chat(message: str, history: List[Dict[str, str]], context: Option
                         )
                         answer = follow_resp.choices[0].message.content or ""
                     except Exception:
-                        pass
+                        answer = "The products you asked for are currently out of stock, but I found some similar alternatives below that are available. Let me know if any catch your eye!"
 
             if not answer:
-                answer = "The products you're looking for are currently out of stock. Try searching for something else or check back later!"
+                answer = "Sorry, those products are currently out of stock. Would you like to browse other categories or check back later?"
 
     if not answer:
         if is_policy_question:
             policy_type = None
-            for kw in policy_keywords:
+            for kw in ["shipping", "return", "refund", "returns", "privacy", "terms", "warranty"]:
                 if kw in message.lower():
                     if kw == "return" or kw == "returns":
                         policy_type = "return_policy"
+                        break
                     elif kw == "shipping":
                         policy_type = "shipping_policy"
+                        break
                     elif kw == "refund" or kw == "refunds":
                         policy_type = "refund_policy"
+                        break
                     elif kw == "privacy":
                         policy_type = "privacy_policy"
+                        break
                     elif kw == "terms":
                         policy_type = "terms_of_service"
+                        break
                     elif kw == "warranty":
                         policy_type = "warranty_policy"
-                    break
+                        break
+            if not policy_type:
+                logger.info("Policy keywords matched but no specific type identified: %s", message)
             if policy_type:
                 from app.tools.get_policy import get_policy
                 pol = get_policy(policy_type)
                 if pol:
                     answer = pol["content"]
                 else:
-                    answer = "I don't have that policy information right now. Please contact our support team for assistance."
+                    import httpx
+                    import re
+                    policy_handle = policy_type.replace("_policy", "-policy").replace("_", "-")
+                    try:
+                        resp = httpx.get(f"https://kolan.co.in/policies/{policy_handle}.json", timeout=10)
+                        if resp.status_code == 200:
+                            data = resp.json().get("policy", {})
+                            body = re.sub(r'<[^>]+>', ' ', data.get("body", ""))
+                            body = re.sub(r'\s+', ' ', body).strip()
+                            if body:
+                                answer = body
+                            else:
+                                answer = "Please check our policy page at /policies/" + policy_handle
+                        else:
+                            answer = "Please check our policy page at /policies/" + policy_handle
+                    except Exception:
+                        answer = "Please check our policy page at /policies/" + policy_handle
+            else:
+                import httpx
+                import re
+                for ph in ["shipping-policy", "refund-policy", "return-policy", "privacy-policy", "terms-of-service"]:
+                    try:
+                        resp = httpx.get(f"https://kolan.co.in/policies/{ph}.json", timeout=10)
+                        if resp.status_code == 200:
+                            data = resp.json().get("policy", {})
+                            body = re.sub(r'<[^>]+>', ' ', data.get("body", ""))
+                            body = re.sub(r'\s+', ' ', body).strip()
+                            if body:
+                                answer = f"Here is our {ph.replace('-', ' ')}:\n\n{body[:2000]}"
+                                break
+                    except Exception:
+                        continue
+                if not answer:
+                    answer = "Please check our policies at kolan.co.in/policies"
+        elif products:
+            count = len([p for p in products if p["available"]])
+            if count > 0:
+                answer = f"I found {count} products that might interest you! You can browse them below. Would you like me to help you narrow it down by category, price, or specific needs?"
+            else:
+                answer = "Sorry, those products are currently out of stock. Would you like to check out some other categories we have available?"
         else:
-            answer = "Sorry, I couldn't find any products matching your request. Please try a different search."
+            answer = "I couldn't find any products matching your request, but don't worry! You can try browsing our categories like Cleaners, Pet Care, or check out our current deals and offers. What sounds interesting to you?"
 
     mode = class_info["mode"]
     if not mode["show_images"] or not mode["recommend_products"]:
         products.clear()
+
+    try:
+        answer = re.sub(r'<function=\w+\s*\{.*?\}</function>', '', answer).strip()
+    except Exception:
+        pass
 
     return {"answer": answer, "products": products}

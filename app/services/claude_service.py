@@ -175,6 +175,9 @@ async def claude_chat(message: str, history: List[Dict[str, str]], context: Opti
                             "image_url": p["image_url"],
                             "handle": p["handle"],
                             "available": p["available"],
+                            "first_variant_id": p.get("first_variant_id", ""),
+                            "short_description": p.get("short_description", ""),
+                            "compare_at_price": p.get("compare_at_price", 0),
                         })
 
                 tool_results.append({

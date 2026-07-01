@@ -57,8 +57,10 @@ def upsert_product(payload: Dict[str, Any]) -> None:
     inventory_quantity = 0
     available = 1
 
+    first_variant_id = ""
     if variants:
         v = variants[0]
+        first_variant_id = str(v.get("id", ""))
         price = float(v.get("price", 0))
         compare_price = v.get("compare_at_price")
         if compare_price is not None:
@@ -71,29 +73,33 @@ def upsert_product(payload: Dict[str, Any]) -> None:
     if images:
         image_url = images[0].get("src", "")
 
+    shopify_created_at = payload.get("created_at", "")
+
     cursor.execute("""
         INSERT INTO products (
             shopify_id, title, handle, description, price,
-            compare_at_price, vendor, product_type, tags,
-            image_url, inventory_quantity, available, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            compare_at_price, first_variant_id, vendor, product_type, tags,
+            image_url, inventory_quantity, available, shopify_created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
         ON CONFLICT(shopify_id) DO UPDATE SET
             title = excluded.title,
             handle = excluded.handle,
             description = excluded.description,
             price = excluded.price,
             compare_at_price = excluded.compare_at_price,
+            first_variant_id = excluded.first_variant_id,
             vendor = excluded.vendor,
             product_type = excluded.product_type,
             tags = excluded.tags,
             image_url = excluded.image_url,
             inventory_quantity = excluded.inventory_quantity,
             available = excluded.available,
+            shopify_created_at = excluded.shopify_created_at,
             updated_at = datetime('now')
     """, (
         shopify_id, title, handle, description, price,
-        compare_at_price, vendor, product_type, tags,
-        image_url, inventory_quantity, available
+        compare_at_price, first_variant_id, vendor, product_type, tags,
+        image_url, inventory_quantity, available, shopify_created_at
     ))
 
     conn.commit()
@@ -206,15 +212,23 @@ def get_collection_products(handle: str, limit: int = 20):
             for p in products:
                 variants = p.get("variants", [])
                 price = float(variants[0].get("price", 0)) if variants else 0
+                compare_at_price = 0.0
+                if variants:
+                    cp = variants[0].get("compare_at_price")
+                    if cp is not None:
+                        compare_at_price = float(cp)
                 available = any(v.get("available", False) for v in variants) if variants else False
                 images = p.get("images", [])
                 image_url = images[0].get("src", "") if images else ""
                 results.append({
                     "title": p.get("title", ""),
                     "price": price,
+                    "compare_at_price": compare_at_price,
                     "handle": p.get("handle", ""),
                     "image_url": image_url,
                     "available": available,
+                    "first_variant_id": str(variants[0].get("id", "")) if variants else "",
+                    "short_description": "",
                 })
             return results
     except Exception:

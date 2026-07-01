@@ -47,7 +47,7 @@
     }{% else %}null{% endif %},
 
     cart: {
-      itemCount: {{ cart.item_count }},
+      itemCount: {{ cart.item_count | default: 0 }},
       totalPrice: {{ cart.total_price | money_without_currency | json }},
       items: [
         {% for item in cart.items limit: 10 %}
@@ -85,7 +85,7 @@
       ],
       'collection': [
         { icon: '⭐', label: 'Best sellers', message: 'Show me the best sellers in this collection' },
-        { icon: '🔄', label: 'Compare products', message: 'Help me compare products in this collection' },
+        { icon: '📜', label: 'Our Policy', message: 'What is your shipping policy?' },
         { icon: '🏷️', label: 'Best deal?', message: 'What is the best deal in this collection?' },
         { icon: '🆕', label: 'What is new?', message: 'What new products do you have?' }
       ],
@@ -96,9 +96,9 @@
         { icon: '💰', label: 'Free shipping?', message: 'How much more do I need for free shipping?' }
       ],
       'index': [
-        { icon: '🔥', label: 'Best Sellers', message: 'Show me best-selling products' },
+        { icon: '🔥', label: 'Best Sellers', message: 'Show me your best-selling products' },
+        { icon: '🆕', label: 'What is New?', message: 'What new products do you have?' },
         { icon: '🐶', label: 'For Dogs', message: 'What products do you have for dogs?' },
-        { icon: '🐱', label: 'For Cats', message: 'What products do you have for cats?' },
         { icon: '🏷️', label: 'Current Offers', message: 'What offers and deals are available?' }
       ],
       'search': [
@@ -384,6 +384,7 @@
 .product-title { color: var(--kolan-green-dark); font-size: 13.5px; font-weight: 600; text-decoration: none; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; transition: color 0.2s ease; }
 .product-title:hover { color: var(--kolan-green); text-decoration: underline; }
 .product-price { color: var(--text-primary); margin-top: 4px; font-size: 15px; font-weight: 700; }
+.product-desc { color: var(--text-secondary); font-size: 11.5px; line-height: 1.4; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .cart-btn {
   width: 100%; margin-top: 10px; border: 1.5px solid var(--kolan-green);
   border-radius: var(--radius-full); padding: 10px; background: transparent; color: var(--kolan-green);
@@ -517,7 +518,16 @@ async function askAI() {
         data.products.forEach(function(product, idx) {
           setTimeout(function() {
             var card = document.createElement('div'); card.className = 'product-card';
-            card.innerHTML = '<img class="product-image" src="' + (product.image_url || '') + '" alt="' + escapeHTML(product.title) + '" /><div class="product-content"><a class="product-title" href="/products/' + product.handle + '" target="_self">' + escapeHTML(product.title) + '</a><div class="product-price">₹' + (product.price || '') + '</div><a class="cart-btn" href="/products/' + product.handle + '" target="_self">View Product</a></div>';
+            var addUrl = product.first_variant_id ? '/cart/' + product.first_variant_id + ':1' : '/products/' + product.handle;
+            var descText = product.short_description ? '<div class="product-desc">' + escapeHTML(product.short_description) + '</div>' : '';
+            var priceHtml = '';
+            if (product.compare_at_price && parseFloat(product.compare_at_price) > parseFloat(product.price)) {
+                var discountPct = Math.round((1 - product.price / product.compare_at_price) * 100);
+                priceHtml = '<div class="product-price"><span style="text-decoration:line-through;color:#868e96;font-size:12px;margin-right:6px;">₹' + product.compare_at_price + '</span><span style="font-weight:700;">₹' + product.price + '</span><span style="background:#e63946;color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-left:6px;">-' + discountPct + '%</span></div>';
+            } else {
+                priceHtml = '<div class="product-price">₹' + (product.price || '') + '</div>';
+            }
+            card.innerHTML = '<img class="product-image" src="' + (product.image_url || '') + '" alt="' + escapeHTML(product.title) + '" /><div class="product-content"><a class="product-title" href="/products/' + product.handle + '" target="_self">' + escapeHTML(product.title) + '</a>' + priceHtml + descText + '<a class="cart-btn" href="' + addUrl + '" target="_self">🛒 Add to Cart</a></div>';
             messages.appendChild(card);
             messages.scrollTo({ top: messages.scrollHeight, behavior: 'smooth' });
           }, idx * 120);

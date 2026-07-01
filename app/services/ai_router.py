@@ -4,9 +4,12 @@ from typing import List, Dict, Any, Optional
 from app.core.config import settings
 from app.services.groq_service import groq_chat
 from app.services.claude_service import claude_chat
+from app.services.openai_service import openai_chat
 from app.services.query_classifier import build_emotion_context
 
 logger = logging.getLogger(__name__)
+
+USE_OPENAI = True  # Set False to fall back to Groq
 
 
 def needs_claude(message: str) -> bool:
@@ -37,9 +40,13 @@ async def route_chat(message: str, history: List[Dict[str, str]], context: Optio
     emotion_label = class_info["emotion_label"]
     query_type = class_info["query_type"]
 
-    use_claude = needs_claude(message) and bool(settings.claude_api_key)
+    has_openai = bool(settings.openai_api_key)
+    has_claude = bool(settings.claude_api_key)
+    has_groq = bool(settings.groq_api_key)
 
-    if not use_claude and bool(settings.claude_api_key):
+    use_claude = needs_claude(message) and has_claude
+
+    if not use_claude and has_claude:
         if query_type in ("complaint",) and emotion_label in ("frustrated", "dissatisfied"):
             logger.info("Routing complaint/emotional message to Claude")
             use_claude = True
@@ -47,9 +54,16 @@ async def route_chat(message: str, history: List[Dict[str, str]], context: Optio
             logger.info("Routing comparison to Claude")
             use_claude = True
 
-    logger.info("Routing message to %s (query=%s, emotion=%s)", "Claude" if use_claude else "Groq", query_type, emotion_label)
-
     if use_claude:
+        logger.info("Routing to Claude (query=%s, emotion=%s)", query_type, emotion_label)
         return await claude_chat(message, history, context=context)
-    else:
+
+    if USE_OPENAI and has_openai:
+        logger.info("Routing to OpenAI GPT-4o-mini (query=%s, emotion=%s)", query_type, emotion_label)
+        return await openai_chat(message, history, context=context)
+
+    if has_groq:
+        logger.info("Routing to Groq (query=%s, emotion=%s)", query_type, emotion_label)
         return await groq_chat(message, history, context=context)
+
+    return {"answer": "No AI service is configured. Please set OPENAI_API_KEY, GROQ_API_KEY, or CLAUDE_API_KEY.", "products": []}
