@@ -15,7 +15,8 @@ _ENV_VARS_TO_STRIP = [
 for _key in _ENV_VARS_TO_STRIP:
     _raw = os.environ.get(_key)
     if _raw:
-        os.environ[_key] = _raw.strip()
+        # Take only the last line (Vercel env vars sometimes get leading garbage)
+        os.environ[_key] = _raw.splitlines()[-1].strip()
 
 
 class Settings(BaseSettings):
