@@ -6,9 +6,7 @@ from app.core.config import settings
 
 
 def get_db_path() -> Path:
-    if os.environ.get("VERCEL") == "1":
-        return Path("/tmp/kolan.db")
-    raw = settings.database_url.strip()
+    raw = settings.database_url
     return Path(raw).resolve()
 
 
