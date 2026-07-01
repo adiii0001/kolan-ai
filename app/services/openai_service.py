@@ -88,8 +88,9 @@ RULES:
 - If a specific product is out of stock, say so politely and suggest in-stock alternatives.
 - Never recommend out-of-stock items.
 - CRITICAL: When showing products, keep your text VERY SHORT (1-2 sentences max). The product cards with images, prices, and links will be shown automatically. Do NOT list products in your text — just say something like "Here are some great options!" or "We have combo packs available!" and let the cards display.
+- NEVER include URLs, image links, markdown image syntax, or product links in your text response. The frontend handles product display automatically.
 - End responses with a friendly follow-up question to continue the conversation.
-- Be warm, conversational, and helpful. Format as plain text, no markdown. Do NOT use asterisks, bold, italics, bullet points, numbered lists, or any special formatting. Use simple sentences with plain punctuation only."""
+- Be warm, conversational, and helpful. Format as plain text, no markdown. Do NOT use asterisks, bold, italics, bullet points, numbered lists, URLs, or any special formatting. Use simple sentences with plain punctuation only."""
 
 TOOLS = [
     {
