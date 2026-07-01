@@ -24,14 +24,13 @@ class Settings(BaseSettings):
         env_file = ".env" if _should_load_dotenv() else None
         env_file_encoding = "utf-8"
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def model_post_init(self, __context):
         # Strip leading/trailing whitespace from all string values (fixes Vercel
         # env var corruption where stray newlines get prepended to values)
         for field_name in self.model_fields:
             value = getattr(self, field_name)
             if isinstance(value, str):
-                setattr(self, field_name, value.strip())
+                object.__setattr__(self, field_name, value.strip())
 
 
 settings = Settings()
